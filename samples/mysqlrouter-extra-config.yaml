@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysqlrouter-extra-config
+  namespace: default
+data:
+  mysqlrouter.conf: |
+    [io]
+    backend=linux_epoll
+    threads=32
