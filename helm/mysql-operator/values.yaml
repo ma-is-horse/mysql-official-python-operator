@@ -1,6 +1,8 @@
 image:
-  registry: container-registry.oracle.com
-  repository: mysql
+#  registry: container-registry.oracle.com
+  registry: release-ci.daocloud.io
+#  repository: mysql
+  repository: demo
   name: community-operator
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
