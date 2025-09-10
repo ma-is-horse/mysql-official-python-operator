@@ -13,7 +13,8 @@ envs:
     imagesPullPolicy: IfNotPresent
     imagesDefaultRegistry:
     imagesDefaultRepository:
-    k8sClusterDomain:
+    # 这个值为空,operator就会报: "Failed to detect cluster domain. Reason: [Errno -2] Name or service not known"
+    k8sClusterDomain: cluster.local
 
 replicas: 1
 
