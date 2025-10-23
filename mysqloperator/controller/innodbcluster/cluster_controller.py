@@ -357,6 +357,7 @@ class ClusterController:
 
         update = True
         try:
+            # mabing: 这里决定是创建还是更新msyqlrouter的账号
             session.run_sql("show grants for ?@'%'", [user])
         except mysqlsh.Error as e:
             if e.code == mysqlsh.mysql.ErrorCode.ER_NONEXISTING_GRANT:

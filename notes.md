@@ -92,9 +92,9 @@ https://dev.mysql.com/doc/mysql-router/8.0/en/mysql-router-command-options-runti
 - 上面链接里的第二种方式就是`用配置文件覆盖`的方式
 
 ## router的用户没有创建出来
-在实例的创建过程中mysqlrouter没有被创建出来, 这个账号对应的k8s的secret是有的
+在8.3.0-2.1.2版本的operaotr创建实例的过程中偶尔出现mysqlrouter这个账号在mysql里没有被创建出来, 这个账号对应的k8s的secret是有的
 ```sql
-mysql> select user,host from mysql.user;
+mysql> select user,host from mysql.user; -- 正常的是应该有mysqlrouter这个账号的
 +---------------------------+-----------+
 | user                      | host      |
 +---------------------------+-----------+
@@ -112,6 +112,12 @@ mysql> select user,host from mysql.user;
 +---------------------------+-----------+
 11 rows in set (0.00 sec)
 ```
+
+### 在集群启动的时候,创建mysqlrouter账号
+```python
+def post_create_actions(self, session: 'ClassicSession', dba_cluster: 'Cluster', logger: Logger)
+```
+
 在最新版的代码里,有下面的语句可能解决这个问题?
 ```python
 # commit: 9ea5ee8758db4e9be69a0eb88da722a8732f5329
@@ -119,7 +125,7 @@ operator_cluster.ensure_router_accounts_are_uptodate(clusters, logger)
 ```
 ### 验证
 在mysql里把`mysqlrouter`这个账号的信息删除掉, 重启(或者不重启)operator, 看operator能否根据secret自动在mysql里创建这个账号.  
-只是去update,如果账号信息不存在,无法创建就会报错
+只是去update,如果账号信息不存在,无法创建就会报错, operator相关的日志如下:  
 ```txt
 Traceback (most recent call last):
   File "/usr/lib/mysqlsh/python-packages/kopf/_core/actions/execution.py", line 276, in execute_handler_once

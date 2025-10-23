@@ -43,6 +43,7 @@ def on_startup(settings: kopf.OperatorSettings, logger: Logger, *args, **_):
     clusters = cluster_api.get_all_clusters()
     operator_cluster.ensure_backup_schedules_use_current_image(clusters, logger)
     operator_cluster.monitor_existing_clusters(clusters, logger)
+    # mabing: 这个只是保证更新, 那最开始的创建在ClusterController.post_create_actions这里
     operator_cluster.ensure_router_accounts_are_uptodate(clusters, logger)
 
     g_group_monitor.start()
