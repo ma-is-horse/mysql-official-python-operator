@@ -1,13 +1,16 @@
 apiVersion: mysql.oracle.com/v2
 kind: InnoDBCluster
 metadata:
-  name: mabing0910
+#  name: mabing0910
+  name: mabing1023
+  namespace: default
 spec:
   # 在podSpec里指定容器镜像
   podSpec:
     containers:
       # 本来是container-registry.oracle.com/mysql/community-server:9.4.0
-      - image: release-ci.daocloud.io/demo/community-server:8.4.5
+#      - image: release-ci.daocloud.io/demo/community-server:8.4.5
+      - image: release-ci.daocloud.io/demo/community-server:8.0.37
         name: mysql
         resources:
           limits:
@@ -16,7 +19,8 @@ spec:
           requests:
             cpu: 100m
             memory: 100Mi
-      - image: release-ci.daocloud.io/demo/community-operator:8.4.6-2.1.8
+#      - image: release-ci.daocloud.io/demo/community-operator:8.4.6-2.1.8
+      - image: release-ci.daocloud.io/demo/community-operator:9.4.0-2.2.5
         name: sidecar
         resources:
           limits:
@@ -26,7 +30,8 @@ spec:
             cpu: 1000m
             memory: 1Gi
     initContainers:
-      - image: release-ci.daocloud.io/demo/community-operator:8.4.6-2.1.8
+#      - image: release-ci.daocloud.io/demo/community-operator:8.4.6-2.1.8
+      - image: release-ci.daocloud.io/demo/community-operator:9.4.0-2.2.5
         name: fixdatadir
         resources:
           limits:
@@ -35,7 +40,8 @@ spec:
           requests:
             cpu: 100m
             memory: 100Mi
-      - image: release-ci.daocloud.io/demo/community-operator:8.4.6-2.1.8
+#      - image: release-ci.daocloud.io/demo/community-operator:8.4.6-2.1.8
+      - image: release-ci.daocloud.io/demo/community-operator:9.4.0-2.2.5
         name: initconf
         resources:
           limits:
@@ -44,7 +50,8 @@ spec:
           requests:
             cpu: 100m
             memory: 100Mi
-      - image: release-ci.daocloud.io/demo/community-server:8.4.5
+#      - image: release-ci.daocloud.io/demo/community-server:8.4.5
+      - image: release-ci.daocloud.io/demo/community-server:8.0.37
         name: initmysql
         resources:
           limits:
@@ -57,6 +64,8 @@ spec:
   instances: 1
   router:
     instances: 1
+#    image: container-registry.oracle.com/mysql/community-router:9.4.0
+    image: release-ci.daocloud.io/demo/community-router:9.4.0
   tlsUseSelfSigned: true
   datadirVolumeClaimTemplate:
     accessModes: [ "ReadWriteOnce" ]
@@ -69,6 +78,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: mypwds
+  namespace: default
 stringData:
   rootUser: root
   rootHost: '%'
