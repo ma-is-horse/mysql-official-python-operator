@@ -90,3 +90,30 @@ mysql -uroot -proot@123! -P6446 -h10.6.178.200
 https://dev.mysql.com/doc/mysql-router/8.0/en/mysql-router-command-options-runtime.html
 - `--bootstrap`后面跟的是server_url,写法:
 - 上面链接里的第二种方式就是`用配置文件覆盖`的方式
+
+## router的用户没有创建出来
+在实例的创建过程中mysqlrouter没有被创建出来, 这个账号对应的k8s的secret是有的
+```sql
+mysql> select user,host from mysql.user;
++---------------------------+-----------+
+| user                      | host      |
++---------------------------+-----------+
+| mysql_innodb_cluster_1000 | %         |
+| mysqladmin                | %         |
+| mysqlbackup               | %         |
+| mysqlrouter               | %         |
+| root                      | %         |
+| localroot                 | localhost |
+| mysql.infoschema          | localhost |
+| mysql.session             | localhost |
+| mysql.sys                 | localhost |
+| mysqlhealthchecker        | localhost |
+| mysqlmetrics              | localhost |
++---------------------------+-----------+
+11 rows in set (0.00 sec)
+```
+在最新版的代码里,有下面的语句可能解决这个问题?
+```python
+# commit: 9ea5ee8758db4e9be69a0eb88da722a8732f5329
+operator_cluster.ensure_router_accounts_are_uptodate(clusters, logger)
+```
