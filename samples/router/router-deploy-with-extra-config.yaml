@@ -35,11 +35,16 @@ spec:
       volumes:
         - name: tmpdir
           emptyDir: {}
+        - name: mysqlrouter-extra-config
+          configMap:
+            name: mysqlrouter-extra-config
       containers:
         - name: router
-          image: release-ci.daocloud.io/demo/community-router:8.4.6
+          image: release-ci.daocloud.io/demo/community-router:8.4.5
           args:
             - mysqlrouter
+            - --extra-config
+            - /etc/mysqlrouter/mysqlrouter.conf
           ports:
             - name: mysqlrw
               containerPort: 6446
@@ -82,6 +87,9 @@ spec:
           volumeMounts:
             - name: tmpdir
               mountPath: /tmp
+            - name: mysqlrouter-extra-config
+              mountPath: /etc/mysqlrouter
+              readOnly: true
           livenessProbe:
             httpGet:
               path: /api/20190715/swagger.json

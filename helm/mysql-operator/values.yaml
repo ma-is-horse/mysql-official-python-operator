@@ -6,7 +6,9 @@ image:
   name: community-operator
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
-  tag: ""
+#  tag: ""
+# mysql-server为8.4.5时用默认的operator镜像,sidecar会报错
+  tag: "8.4.6-2.1.8"
   pullSecrets:
     enabled: false
     secretName:

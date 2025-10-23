@@ -1,3 +1,4 @@
+# router-with-extra-config.yaml里用到的configMap
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,4 +8,4 @@ data:
   mysqlrouter.conf: |
     [io]
     backend=linux_epoll
-    threads=32
+    threads=1

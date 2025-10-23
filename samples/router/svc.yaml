@@ -1,0 +1,29 @@
+# 这个服务是由自动生成的headless svc修改过来的
+apiVersion: v1
+kind: Service
+metadata:
+  name: mabing0910-instances-master
+  namespace: default
+  labels:
+    mysql.oracle.com/cluster: mabing0910
+    mysql.oracle.com/instance-type: group-member
+    tier: mysql
+spec:
+  ports:
+    - name: mysql
+      protocol: TCP
+      port: 3306
+      targetPort: 3306
+      nodePort: 31232
+  selector:
+    component: mysqld
+    mysql.oracle.com/cluster: mabing0910
+    mysql.oracle.com/instance-type: group-member
+    tier: mysql
+  type: NodePort
+  sessionAffinity: None
+  publishNotReadyAddresses: true
+  ipFamilies:
+    - IPv4
+  ipFamilyPolicy: SingleStack
+  internalTrafficPolicy: Cluster

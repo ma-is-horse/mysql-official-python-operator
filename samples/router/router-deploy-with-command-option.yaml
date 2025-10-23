@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mabing0910-router-cmd-option
+  namespace: default
+  labels:
+    k8slens-edit-resource-version: v1
+  annotations:
+    deployment.kubernetes.io/revision: '2'
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: router
+      app.kubernetes.io/created-by: mysql-operator
+      app.kubernetes.io/instance: mysql-innodbcluster-mabing0910-router
+      app.kubernetes.io/managed-by: mysql-operator
+      app.kubernetes.io/name: mysql-router
+      component: mysqlrouter
+      mysql.oracle.com/cluster: mabing0910
+      tier: mysql
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app.kubernetes.io/component: router
+        app.kubernetes.io/created-by: mysql-operator
+        app.kubernetes.io/instance: mysql-innodbcluster-mabing0910-router
+        app.kubernetes.io/managed-by: mysql-operator
+        app.kubernetes.io/name: mysql-router
+        component: mysqlrouter
+        mysql.oracle.com/cluster: mabing0910
+        tier: mysql
+    spec:
+      volumes:
+        - name: tmpdir
+          emptyDir: {}
+      containers:
+        - name: router
+          image: release-ci.daocloud.io/demo/community-router:8.4.5
+          args:
+            - mysqlrouter
+            - --bootstrap root@
+            - --logger.level=debug
+            -
+          ports:
+            - name: mysqlrw
+              containerPort: 6446
+              protocol: TCP
+            - name: mysqlxrw
+              containerPort: 6448
+              protocol: TCP
+            - name: mysqlrwsplit
+              containerPort: 6450
+              protocol: TCP
+            - name: mysqlro
+              containerPort: 6447
+              protocol: TCP
+            - name: mysqlxro
+              containerPort: 6449
+              protocol: TCP
+            - name: http
+              containerPort: 8443
+              protocol: TCP
+          env:
+            - name: MYSQL_HOST
+              value: mabing0910-instances.default.svc.cluster.local
+            - name: MYSQL_PORT
+              value: '3306'
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mabing0910-router
+                  key: routerUsername
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mabing0910-router
+                  key: routerPassword
+            - name: MYSQL_CREATE_ROUTER_USER
+              value: '0'
+            - name: MYSQL_ROUTER_BOOTSTRAP_EXTRA_OPTIONS
+              value: '--conf-set-option=DEFAULT.unknown_config_option=warning'
+          resources: {}
+          volumeMounts:
+            - name: tmpdir
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /api/20190715/swagger.json
+              port: http
+              scheme: HTTPS
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - cat
+                - /tmp/mysqlrouter/mysqlrouter.conf
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
+      serviceAccountName: mabing0910-sidecar-sa
+      serviceAccount: mabing0910-sidecar-sa
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      schedulerName: default-scheduler
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
