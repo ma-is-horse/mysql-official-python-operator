@@ -117,3 +117,40 @@ mysql> select user,host from mysql.user;
 # commit: 9ea5ee8758db4e9be69a0eb88da722a8732f5329
 operator_cluster.ensure_router_accounts_are_uptodate(clusters, logger)
 ```
+### 验证
+在mysql里把`mysqlrouter`这个账号的信息删除掉, 重启(或者不重启)operator, 看operator能否根据secret自动在mysql里创建这个账号.  
+只是去update,如果账号信息不存在,无法创建就会报错
+```txt
+Traceback (most recent call last):
+  File "/usr/lib/mysqlsh/python-packages/kopf/_core/actions/execution.py", line 276, in execute_handler_once
+    result = await invoke_handler(
+             ^^^^^^^^^^^^^^^^^^^^^
+    ...<9 lines>...
+    )
+    ^
+  File "/usr/lib/mysqlsh/python-packages/kopf/_core/actions/execution.py", line 371, in invoke_handler
+    result = await invocation.invoke(
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<9 lines>...
+    )
+    ^
+  File "/usr/lib/mysqlsh/python-packages/kopf/_core/actions/invocation.py", line 139, in invoke
+    await asyncio.shield(future)  # slightly expensive: creates tasks
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/mysqlsh/lib/python3.13/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/mysqlsh/python-packages/mysqloperator/controller/operator.py", line 46, in on_startup
+    operator_cluster.ensure_router_accounts_are_uptodate(clusters, logger)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/mysqlsh/python-packages/mysqloperator/controller/innodbcluster/operator_cluster.py", line 64, in ensure_router_accounts_are_uptodate
+    router_objects.update_router_account(cluster,
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+                                         lambda: logger.warning(f"Cluster {cluster.namespace}/{cluster.name} unreachable"),
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                         logger)
+                                         ^^^^^^^
+  File "/usr/lib/mysqlsh/python-packages/mysqloperator/controller/innodbcluster/router_objects.py", line 489, in update_router_account
+    dba.get_cluster().setup_router_account(user, {"update": True})
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Could not proceed with the operation because account mysqlrouter-F7dZRnLydN@% does not exist and the 'update' option is enabled
+```

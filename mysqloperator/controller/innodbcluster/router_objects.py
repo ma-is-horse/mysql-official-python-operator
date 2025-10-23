@@ -486,6 +486,10 @@ def update_router_account(cluster: InnoDBCluster, on_nonupdated: Optional[Callab
               continue
           try:
               with shellutils.DbaWrap(shellutils.connect_dba(pod.endpoint_co, logger, max_tries=3)) as dba:
+                  # mabing: 这里就是调用了mysqlsh的sdk,相当于在mysqlsh的命令行下执行:
+                  # cluster=dba.getCluster()
+                  # cluster.setupRouterAccount('myRouter1', {password: "newPassword1#",'update':1})
+                  # 当指定update为1的时候,用户信息必须存在,不然会报错
                   dba.get_cluster().setup_router_account(user, {"update": True})
                   updated = True
                   break
