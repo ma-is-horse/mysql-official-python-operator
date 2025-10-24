@@ -1,3 +1,16 @@
+## 打包
+~~如何打包生成镜像?
+- bash gen_dockerfile.sh, 生成Dockerfile
+- 这个Dockerfile的基础镜像又需要build_deps.sh来生成?~~
+
+所以,这种打包不可取, 有些东西没有发布出来,比如`build_deps.sh`的一些参数, 只能采用[CONTRIBUTING.md](CONTRIBUTING.md)里的`Building a test image`的方式  
+```Dockerfile
+ARG BASE_VERSION=9.4.0-2.2.5
+FROM container-registry.oracle.com/mysql/community-operator:$BASE_VERSION
+# 文档里给的指令是错的, 第二个参数少了mysqloperator/
+COPY mysqloperator/ /usr/lib/mysqlsh/python-packages/mysqloperator/
+```
+
 ## operator和mysql-server版本的匹配 
 community-operator:9.4.0-2.2.5和community-server:8.4.5,启动的pod里的sidecar容器报:
 ```txt
