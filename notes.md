@@ -1,3 +1,46 @@
+## mysqlsh的python sdk的源码
+主要是想知道`setup_router_account`这个函数的调用对应的python源码是什么样的, 因为老是出现创建实例的时候, mysqlrouter没有创建出来的问题   
+因此，MySQL Shell Python SDK是作为系统级依赖通过RPM包安装的，并在Python代码中通过`import mysqlsh`语句引入，然后在主程序和配置模块中进行初始化设置。  
+
+## 本地调试
+面临的主要问题是`import mysqlsh`没有办法调用   
+通过把`container-registry.oracle.com/mysql/community-operator:9.1.0-2.2.2`里的`/usr/lib/mysqlsh/python-packages`目录拷贝出来,    
+然后在IDE里设置`PYTHONPATH`指向这个目录,当然要把拷贝出来的`mysqloperaor`这个目录去掉   
+### 拷贝目录
+```bash
+docker run -it --rm --privileged -u root bf0118affa0d bash
+# 就进入这个容器了,然后执行
+cd /usr/lib/mysqlsh/
+tar cvf python-packages.tar python-packages/
+# 在宿主机上执行, d73bb95bc70a是运行的容器的id, 用docker ps查看
+cd /tmp
+docker cp d73bb95bc70a:/usr/lib/mysqlsh/python-packages.tar .
+```
+### 查看本地宿主机的PYTHONPATH
+这里需要把IDE的interpreter设置为这个python3.12
+```bash
+python3.12
+Python 3.12.3 (main, Aug 14 2025, 17:47:21) [GCC 13.3.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import sys
+>>> print(sys.path)
+['', '/usr/lib/python312.zip', '/usr/lib/python3.12', '/usr/lib/python3.12/lib-dynload', '/usr/local/lib/python3.12/dist-packages', '/usr/lib/python3/dist-packages']
+>>>
+```
+### 设置本地
+- 在`/usr/local/lib/python3.12/dist-packages/`在创建`mysqlsh`目录
+- 把上一步从容器里拷贝出来的`python-packages.tar`解压到mysqlsh目录下
+- 验证
+```bash
+python3.12
+Python 3.12.3 (main, Aug 14 2025, 17:47:21) [GCC 13.3.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import mysqlsh
+>>>
+```
+### 设置pycharm使用阿里云安装
+https://blog.csdn.net/kucoll/article/details/79155128
+
 ## 打包
 ~~如何打包生成镜像?
 - bash gen_dockerfile.sh, 生成Dockerfile
@@ -9,6 +52,31 @@ ARG BASE_VERSION=9.4.0-2.2.5
 FROM container-registry.oracle.com/mysql/community-operator:$BASE_VERSION
 # 文档里给的指令是错的, 第二个参数少了mysqloperator/
 COPY mysqloperator/ /usr/lib/mysqlsh/python-packages/mysqloperator/
+```
+
+### 本地运行
+#### 程序入口
+看容器的参数, 是用mysqlsh运行的
+```yaml
+spec:
+  containers:
+  - args:
+    - mysqlsh
+    - "--log-level=@INFO"
+    - "--pym"
+    - mysqloperator
+    - operator
+```
+
+#### main.py
+自己写了个main.py可以在本地运行, 但是在调谐的时候没有办法连接远程服务
+```txt
+[2025-10-27 11:04:17,003] kopf.objects         [INFO    ] Error executing mysqlsh.connect_dba, retrying after 8s: MySQL Error (2005): mysqlsh.connect_dba: Unknown MySQL server host 'mabing1027-0.mabing1027-instances.default.svc.cluster.local' (-2)
+Traceback (most recent call last):
+  File "/root/daocloud/oracle-mysql-operator/mysqloperator/controller/shellutils.py", line 93, in call
+    return f(*args)
+           ^^^^^^^^
+mysqlsh.DBError: MySQL Error (2005): mysqlsh.connect_dba: Unknown MySQL server host 'mabing1027-0.mabing1027-instances.default.svc.cluster.local' (-2)
 ```
 
 ## operator和mysql-server版本的匹配 
@@ -126,12 +194,13 @@ mysql> select user,host from mysql.user; -- 正常的是应该有mysqlrouter这�
 11 rows in set (0.00 sec)
 ```
 
-### 在集群启动的时候,创建mysqlrouter账号
+## 在集群启动的时候,创建mysqlrouter账号
+问题: 前线反映, 经常出现MGR实例创建后, mysqlrouter这个账号没有创建出来,看了源码创建mysqlrouter账号的地方主要在下面的代码: 
 ```python
 def post_create_actions(self, session: 'ClassicSession', dba_cluster: 'Cluster', logger: Logger)
 ```
 
-在最新版的代码里,有下面的语句可能解决这个问题?
+在最新版的代码里,有下面的语句可能解决这个问题?应该不是,这里只是保证更新
 ```python
 # commit: 9ea5ee8758db4e9be69a0eb88da722a8732f5329
 operator_cluster.ensure_router_accounts_are_uptodate(clusters, logger)
@@ -173,3 +242,6 @@ Traceback (most recent call last):
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
 RuntimeError: Could not proceed with the operation because account mysqlrouter-F7dZRnLydN@% does not exist and the 'update' option is enabled
 ```
+修改代码后, 可以在重启operator后保证创建出来mysqlrouter账号,不会出现上面的错误了
+
+### 创建的时候,没有创建出来的核心原因是什么?

@@ -366,6 +366,7 @@ class ClusterController:
                 raise
         logger.debug(
             f"{'Updating' if update else 'Creating'} router account {user}")
+        # 这里是不是没有报错??
         dba_cluster.setup_router_account(
             user, {"password": password, "update": update})
 
