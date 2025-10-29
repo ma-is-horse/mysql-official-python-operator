@@ -1,0 +1,9 @@
+# CONTRIBUTING.md里建议采用的方式
+ARG BASE_VERSION=9.4.0-2.2.5
+FROM container-registry.oracle.com/mysql/community-operator:$BASE_VERSION
+#FROM release-ci.daocloud.io/demo/community-operator:$BASE_VERSION
+#ARG BASE_VERSION=8.4.7-2.1.9
+#ARG BASE_VERSION=8.0.37-2.0.14
+#FROM release.daocloud.io/demo/community-operator:$BASE_VERSION
+# 文档里给的指令是错的, 第二个参数少了mysqloperator/
+COPY mysqloperator/ /usr/lib/mysqlsh/python-packages/mysqloperator/

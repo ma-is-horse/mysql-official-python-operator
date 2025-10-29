@@ -311,3 +311,14 @@ def query_members(session):
 
 def parse_uri(uri):
     return mysqlsh.globals.shell.parse_uri(uri)
+
+def setup_router_account_with_try(dba_cluster: 'Cluster', logger: 'Logger', user: str, password: str, update: bool = False):
+    msg= f"{'Updating' if update else 'Creating'} router account {user} of cluster {dba_cluster.get_name()}"
+    logger.info(msg)
+    try:
+        dba_cluster.setup_router_account(
+            user, {"password": password, "update": update})
+    except Exception as e:
+        logger.error(f"{msg} failed, error: {e}")
+    else:
+        logger.info(f"{msg} success")

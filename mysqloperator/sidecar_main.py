@@ -288,6 +288,32 @@ def create_root_account(session: 'ClassicSession', pod: MySQLPod, cluster: InnoD
         # Drop the default root account and keep the new one only
         session.run_sql("DROP USER IF EXISTS root@localhost")
 
+def create_router_account(session: 'ClassicSession', pod: MySQLPod, cluster: InnoDBCluster, logger: Logger) -> None:
+    """
+    Create general purpose router account (owned by user) as specified by user.
+    """
+    try:
+        user, password = cluster.get_router_account()
+    except Exception as e:
+        pod.error(action="InitDB", reason="InvalidArgument", message=f"{e}")
+        raise
+
+    else:
+        host = "%"
+        logger.info(f"Creating router account {user}%{host}")
+        session.run_sql("CREATE USER IF NOT EXISTS ?@? IDENTIFIED BY ?", [user, host, password])
+        session.run_sql("GRANT USAGE ON *.* TO ?@?", [user, host])
+        session.run_sql("GRANT SELECT, EXECUTE ON mysql_innodb_cluster_metadata.* TO ?@?", [user, host])
+        session.run_sql(
+            "GRANT INSERT, UPDATE, DELETE ON mysql_innodb_cluster_metadata.* TO ?@?", [user, host])
+        # session.run_sql(
+        #     "GRANT INSERT, UPDATE, DELETE ON mysql_innodb_cluster_metadata.v2_routers TO ?@?", [user, host])
+        session.run_sql(
+            "GRANT SELECT ON performance_schema.global_variables TO ?@?", [user, host])
+        session.run_sql(
+            "GRANT SELECT ON performance_schema.replication_group_member_stats TO ?@?", [user, host])
+        session.run_sql(
+            "GRANT SELECT ON performance_schema.replication_group_members TO ?@?", [user, host])
 
 def create_admin_account(session, cluster, logger):
     """
@@ -357,6 +383,7 @@ def connect(user: str, password: str, logger: Logger, timeout: Optional[int] = 6
 def initialize(session, datadir: str, pod: MySQLPod, cluster: InnoDBCluster, logger: Logger) -> None:
     session.run_sql("SET sql_log_bin=0")
     create_root_account(session, pod, cluster, logger)
+    create_router_account(session, pod, cluster, logger)
     create_admin_account(session, cluster, logger)
     create_metrics_account(session, cluster, logger)
     session.run_sql("SET sql_log_bin=1")

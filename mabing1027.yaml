@@ -1,0 +1,78 @@
+apiVersion: mysql.oracle.com/v2
+kind: InnoDBCluster
+metadata:
+  name: mgr1030
+  namespace: default
+spec:
+  baseServerId: 1000
+  datadirVolumeClaimTemplate:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi
+  instances: 3
+  podSpec:
+    containers:
+    - image: release-ci.daocloud.io/demo/community-server:8.0.37
+      name: mysql
+      resources:
+        limits:
+          cpu: 4
+          memory: 8Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+#    - image: release-ci.daocloud.io/demo/community-operator:9.4.0-2.2.5
+    - image: release-ci.daocloud.io/demo/community-operator:mabing1029
+      name: sidecar
+      resources:
+        limits:
+          cpu: "4"
+          memory: 8Gi
+        requests:
+          cpu: 1000m
+          memory: 1Gi
+    initContainers:
+    - image: release-ci.daocloud.io/demo/community-operator:mabing1029
+      name: fixdatadir
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+    - image: release-ci.daocloud.io/demo/community-operator:mabing1029
+      name: initconf
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+    - image: release-ci.daocloud.io/demo/community-server:8.0.37
+      name: initmysql
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+  router:
+    instances: 1
+    podSpec:
+      containers:
+        - image: 10.6.229.80/ghcr.m.daocloud.io/ksmartdata/community-router:8.2.0
+          name: router
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+            requests:
+              cpu: 100m
+              memory: 100Mi
+  secretName: mypwds
+  tlsUseSelfSigned: true

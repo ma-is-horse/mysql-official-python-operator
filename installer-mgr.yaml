@@ -1,0 +1,150 @@
+apiVersion: mysql.oracle.com/v2
+kind: InnoDBCluster
+metadata:
+  name: mgr1101-2
+  namespace: default
+spec:
+  datadirVolumeClaimTemplate:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      limits:
+        storage: 1Gi
+      requests:
+        storage: 1Gi
+#  imageRepository: ${image_hub}
+  instances: 3
+#  backupSchedules:
+#  - name: schedule
+#    schedule: ${backup_schedule}
+#    deleteBackupData: false
+#    enabled: ${backup_schedule_enabled}
+#    backupProfile:
+#      dumpInstance:
+#        storage:
+#          s3:
+#            bucketName: ${backup_bucket}
+#            prefix: common-mgr
+#            config: ${COMMON_MGR_BACKUP_SECRET_NAME}
+#            endpoint: ${endpoint}
+#  metrics:
+#    enable: true
+#    image: ""
+#    monitor: false
+#    monitorSpec: {}
+  mycnf: |-
+    [mysqld]
+    log_error_suppression_list = MY-013360
+    binlog_expire_logs_seconds = 36000
+    sort_buffer_size = 2m
+    max_connections = 512
+    sync_binlog = 1
+    innodb_flush_log_at_trx_commit = 1
+    datadir = /var/lib/mysql
+    enforce_gtid_consistency = ON
+    gtid_mode = ON
+    innodb_buffer_pool_size = 1073741824
+    innodb_buffer_pool_instances = 8
+    innodb_log_file_size = 2G
+    local-infile = 1
+    log_bin = ic-metrics
+    log_error_verbosity = 3
+    loose_auth_socket = FORCE_PLUS_PERMANENT
+    loose_group_replication_recovery_use_ssl = 1
+    loose_mysqlx_socket = /var/run/mysqld/mysqlx.sock
+    relay_log_info_repository = TABLE
+    skip_log_error = OFF
+    skip_slave_start = 1
+    socket = /var/run/mysqld/mysql.sock
+  podSpec:
+    containers:
+    - image: release-ci.daocloud.io/demo/community-server:8.0.37
+      name: mysql
+      resources:
+        limits:
+          memory: "8Gi"
+          cpu:    "4000m"
+        requests:
+          memory: "100Mi"
+          cpu: "100m"
+    - image: release.daocloud.io/demo/community-operator:8.3.0-2.1.2-1031-8
+      name: sidecar
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+#    - args:
+#      - --collect.perf_schema.replication_group_member_stats
+#      - --collect.perf_schema.replication_group_has_primary
+#      - --collect.perf_schema.replication_group_primary_host_id
+#      image: ${image_hub}/mysqld-exporter:v0.17.2-4
+#      name: metrics
+#      resources:
+#        limits:
+#          cpu: "2"
+#          memory: 2Gi
+#        requests:
+#          cpu: 100m
+#          memory: 100Mi
+
+    initContainers:
+    - image: release.daocloud.io/demo/community-operator:8.3.0-2.1.2-1031-8
+      name: fixdatadir
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+    - image: release.daocloud.io/demo/community-operator:8.3.0-2.1.2-1031-8
+      name: initconf
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+    - image: release-ci.daocloud.io/demo/community-server:8.0.37
+      name: initmysql
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+  router:
+    instances: 2
+    podSpec:
+      containers:
+      - image: 10.6.229.80/ghcr.m.daocloud.io/ksmartdata/community-router:8.2.0
+        name: router
+        resources:
+          limits:
+            cpu: "2"
+            memory: 2Gi
+          requests:
+            cpu: 100m
+            memory: 100Mi
+  secretName: installer-mgr
+  service:
+    defaultPort: mysql-rw
+    type: ClusterIP
+  tlsUseSelfSigned: true
+  version: 8.0.37
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: installer-mgr
+  namespace: default
+type: Opaque
+stringData:
+  rootHost: "%"
+  rootPassword: root@123!
+  rootUser: root

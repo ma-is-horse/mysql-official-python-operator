@@ -1,0 +1,67 @@
+apiVersion: mysql.oracle.com/v2
+kind: InnoDBCluster
+metadata:
+  name: server940
+  namespace: default
+spec:
+  baseServerId: 1000
+  datadirVolumeClaimTemplate:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi
+  instances: 3
+  podSpec:
+    containers:
+    - image: release-ci.daocloud.io/demo/community-server:9.4.0
+      name: mysql
+      resources:
+        limits:
+          cpu: 4
+          memory: 8Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+#    - image: release-ci.daocloud.io/demo/community-operator:9.4.0-2.2.5
+    - image: release-ci.daocloud.io/demo/community-operator:mabing1028
+      name: sidecar
+      resources:
+        limits:
+          cpu: "4"
+          memory: 8Gi
+        requests:
+          cpu: 1000m
+          memory: 1Gi
+    initContainers:
+    - image: release-ci.daocloud.io/demo/community-operator:mabing1028
+      name: fixdatadir
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+    - image: release-ci.daocloud.io/demo/community-operator:mabing1028
+      name: initconf
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+    - image: release-ci.daocloud.io/demo/community-server:9.4.0
+      name: initmysql
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+  router:
+    instances: 1
+  secretName: mypwds
+  tlsUseSelfSigned: true

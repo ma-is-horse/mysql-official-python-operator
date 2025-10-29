@@ -12,7 +12,8 @@ from ..kubeutils import api_apps, api_core, k8s_cluster_domain
 import kopf
 from logging import Logger
 from typing import Optional
-
+from .. import shellutils
+import mysqlsh
 
 def prepare_router_service(spec: InnoDBClusterSpec) -> dict:
     tmpl = f"""
@@ -431,3 +432,48 @@ def restart_deployment_for_tls(dpl: api_client.V1Deployment, router_tls_crt, rou
 
     logger.info("TLS data hasn't changed. Deployment doesn't need a restart")
     return False
+
+
+def update_router_account(cluster: InnoDBCluster,  logger: Logger) -> None:
+    # mabing: 如果cluster没有ready, 那就跳过了...
+    if not cluster.ready:
+        logger.info(f"Cluster {cluster.namespace}/{cluster.name} not ready. Skipping router account update.")
+        return
+
+    try:
+        user, password = cluster.get_router_account()
+    except ApiException as e:
+        if e.status == 404:
+            # Should not happen, as cluster.ready should be False for a cluster with missing router account
+            # In any case handle this case and skip
+            logger.warning(f"Could not find router account of {cluster.name} in {cluster.namespace}")
+            return
+        raise
+
+    updated = False
+
+    for pod in cluster.get_pods():
+        if pod.deleting:
+            continue
+        try:
+            with shellutils.DbaWrap(shellutils.connect_dba(pod.endpoint_co, logger, max_tries=3)) as dba:
+                logger.info(f"update_router_account, connect to {pod.name}")
+                update = True
+                try:
+                    # mabing: 这里决定是创建还是更新msyqlrouter的账号
+                    dba.session.run_sql("show grants for ?@'%'", [user])
+                except mysqlsh.Error as e:
+                    if e.code == mysqlsh.mysql.ErrorCode.ER_NONEXISTING_GRANT:
+                        update = False
+                    else:
+                        raise
+                shellutils.setup_router_account_with_try(dba.get_cluster(), logger, user, password, update)
+                updated = True
+                break
+
+        except mysqlsh.Error as e:
+            logger.warning(f"Could not connect to {pod.endpoint_co}: {e}")
+            continue
+
+    if not updated:
+        logger.warning(f"Cluster {cluster.namespace}/{cluster.name} unreachable")

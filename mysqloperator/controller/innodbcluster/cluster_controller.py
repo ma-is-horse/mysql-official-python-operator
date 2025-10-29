@@ -334,12 +334,9 @@ class ClusterController:
             if e.code == mysqlsh.mysql.ErrorCode.ER_NONEXISTING_GRANT:
                 update = False
             else:
+                logger.info(f"query grants of {user} failed, error: {e}")
                 raise
-        logger.debug(
-            f"{'Updating' if update else 'Creating'} router account {user}")
-        dba_cluster.setup_router_account(
-            user, {"password": password, "update": update})
-
+        shellutils.setup_router_account_with_try(dba_cluster, logger, user,password, update)
         # create backup account
         user, password = self.cluster.get_backup_account()
         logger.debug(f"Creating backup account {user}")
@@ -528,6 +525,7 @@ class ClusterController:
 
         # if the cluster size is complete, ensure routers are deployed
         if not router_objects.get_size(self.cluster) and member_count == self.cluster.parsed_spec.instances:
+            logger.info("join_instance success, post_create_actions")
             self.post_create_actions(self.dba.session, self.dba_cluster, logger)
 
     def rejoin_instance(self, pod: MySQLPod, pod_session, logger) -> None:

@@ -339,7 +339,7 @@ def on_innodbcluster_create(name: str, namespace: Optional[str], body: Body,
                          message=f"{exc}")
             raise
 
-        print(f"13. Setting operator version for the IC to {DEFAULT_OPERATOR_VERSION_TAG}")
+        print(f"14. Setting operator version for the IC to {DEFAULT_OPERATOR_VERSION_TAG}")
         cluster.set_operator_version(DEFAULT_OPERATOR_VERSION_TAG)
         cluster.info(action="CreateCluster", reason="ResourcesCreated",
                      message="Dependency resources created, switching status to PENDING")
@@ -1033,3 +1033,7 @@ def on_innodbcluster_field_logs(old: str, new: str, body: Body, logger: Logger, 
     with ClusterMutex(cluster):
         sts = cluster.get_stateful_set()
         cluster_objects.update_objects_for_logs(sts, cluster, logger)
+
+def ensure_router_accounts_are_uptodate(clusters: List[InnoDBCluster], logger: Logger) -> None:
+    for cluster in clusters:
+        router_objects.update_router_account(cluster, logger)
