@@ -1,3 +1,48 @@
+## connect_dba
+有大量的类似代码: ` dba = mysqlsh.connect_dba(pod.endpoint_co)`显示无法载入   
+运行一个docker
+```bash
+docker run -it --privileged -u root container-registry.oracle.com/mysql/community-operator:8.3.0-2.1.2 bash
+```
+然后在宿主机上创建一个operator_main.py, 内容是:
+```txt
+#from mysqlsh.mysql import ClassicSession
+from mysqlsh import connect_dba
+
+def main(argv):
+    print("helli,world!")
+if __name__ == "__main__":
+    main([])
+```
+然后把这个文件拷贝到容器里:`docker cp operator_main.py 94076552d08a:/usr/lib/mysqlsh/python-packages/mysqloperator/operator_main.py`     
+然后在容器里执行:    
+```txt
+bash-4.4# mysqlsh --pym mysqloperator operator
+helli,world!
+```
+问题: 这个connect_dba从哪里载入的?
+在本地替换`mysqloperator/operator_main.py`
+```txt
+import mysqlsh
+
+# 查看模块文件路径
+print("mysqlsh module path:", getattr(mysqlsh, "__file__", None))
+
+```
+在IDE执行会输出: `mysqlsh module path: /usr/lib/mysqlsh/python-packages/mysqlsh/__init__.py`
+
+## 查看operator镜像里的python代码
+```txt
+bash-4.4# mysqlsh --pym mysqloperator
+Traceback (most recent call last):
+  File "/usr/lib64/python3.9/runpy.py", line 197, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/usr/lib64/python3.9/runpy.py", line 87, in _run_code
+    exec(code, run_globals)
+  File "/usr/lib/mysqlsh/python-packages/mysqloperator/__main__.py", line 17, in <module>
+    if sys.argv[1] in entrypoints:
+IndexError: list index out of range
+```
 ## mysqlsh的python sdk的源码
 主要是想知道`setup_router_account`这个函数的调用对应的python源码是什么样的, 因为老是出现创建实例的时候, mysqlrouter没有创建出来的问题   
 因此，MySQL Shell Python SDK是作为系统级依赖通过RPM包安装的，并在Python代码中通过`import mysqlsh`语句引入，然后在主程序和配置模块中进行初始化设置。  
