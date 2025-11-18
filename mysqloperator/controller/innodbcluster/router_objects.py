@@ -334,7 +334,6 @@ def update_deployment_spec(dpl: api_client.V1Deployment, patch: dict) -> None:
     api_apps.patch_namespaced_deployment(
         dpl.metadata.name, dpl.metadata.namespace, body=patch)
 
-
 def update_router_container_template_property(dpl: api_client.V1Deployment,
                                               property_name: str, property_value: str,
                                               logger: Logger) -> None:

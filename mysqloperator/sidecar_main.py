@@ -300,7 +300,7 @@ def create_router_account(session: 'ClassicSession', pod: MySQLPod, cluster: Inn
 
     else:
         host = "%"
-        logger.info(f"Creating router account {user}%{host}")
+        logger.info(f"Creating router account {user}@{host}")
         session.run_sql("CREATE USER IF NOT EXISTS ?@? IDENTIFIED BY ?", [user, host, password])
         session.run_sql("GRANT USAGE ON *.* TO ?@?", [user, host])
         session.run_sql("GRANT SELECT, EXECUTE ON mysql_innodb_cluster_metadata.* TO ?@?", [user, host])

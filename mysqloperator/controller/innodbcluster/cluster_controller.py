@@ -323,7 +323,6 @@ class ClusterController:
                 self.post_create_actions(dba.session, self.dba_cluster, logger)
 
     def post_create_actions(self, session: 'ClassicSession', dba_cluster: 'Cluster', logger) -> None:
-        logger.info("cluster_controller::post_create_actions")
         # create router account
         user, password = self.cluster.get_router_account()
 
@@ -350,7 +349,7 @@ class ClusterController:
         # update the router deployment
         n = self.cluster.parsed_spec.router.instances
         if n:
-            logger.debug(f"Setting router replicas to {n}")
+            logger.info(f"Setting router replicas to {n}")
             router_objects.update_size(self.cluster, n, logger)
 
 
@@ -524,7 +523,7 @@ class ClusterController:
             logger.info(f"JOINED {pod.name}: {minfo}")
 
         # if the cluster size is complete, ensure routers are deployed
-        if not router_objects.get_size(self.cluster) and member_count == self.cluster.parsed_spec.instances:
+        if member_count == self.cluster.parsed_spec.instances:
             logger.info("join_instance success, post_create_actions")
             self.post_create_actions(self.dba.session, self.dba_cluster, logger)
 
