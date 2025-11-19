@@ -42,8 +42,10 @@ ClusterController.create_cluster->如果是单实例
     post_create_actions里的第二个参数dba_cluster是什么? 是被创建出来的InnodbCluster里的mysqlsh拿到的cluster么?
 
 ## root用户居然是在sidecar这个容器里被创建的
-create_root_account函数里创建的
-是否可以把mysqlrouter账号的创建也放在这里, 和上面的构成冗余,因为mysqlrouter是用mysqlsh里的cluster.setup_router_account方法创建的
+- 在create_root_account函数里创建的
+- 可以把mysqlrouter账号的创建也放在这里, 和上面的构成冗余
+_- 只是在创建mysqlrouter账号的时候, mysql_innodb_cluster_metadata这个数据库下面的表海没有建出来, 只能grant到数据库._
+- 需要更新sidecar容器的镜像
 
 
 ## 设置为DEBUG级别
@@ -139,4 +141,23 @@ SELECT m.member_id, m.member_role, m.member_state, s.view_id, m.member_version,
     WHERE m.member_id = @@server_uuid;
 ```
 
-## get_router_account
+## 重启router的deployment
+```go
+def restart_deployment(cluster: InnoDBCluster, logger: Logger)->None:
+    def inner_restart(ns:str, name: str, replicas: int)->None:
+        api_apps.patch_namespaced_deployment(name, ns, body={"spec": {"replicas": replicas}})
+    deploy = cluster.get_router_deployment()
+    if not deploy:
+        return None
+    size = deploy.spec.replicas
+    meta = deploy.metadata
+    namespace_name = f"{meta.namespace}/{meta.name}"
+    if size:
+        logger.info(f"Restarting the router's deployment for cluster {namespace_name}, replicas = {size}")
+        inner_restart(meta.namespace, meta.name, 0)
+        inner_restart(meta.namespace, meta.name, size)
+        return None
+    else:
+        logger.info(f"Conditions not met, giving up on restarting the cluster {namespace_name}")
+        return None
+```

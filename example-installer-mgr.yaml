@@ -1,7 +1,7 @@
 apiVersion: mysql.oracle.com/v2
 kind: InnoDBCluster
 metadata:
-  name: mgr1101-2
+  name: mgr1103
   namespace: default
 spec:
   datadirVolumeClaimTemplate:

@@ -1,7 +1,7 @@
 apiVersion: mysql.oracle.com/v2
 kind: InnoDBCluster
 metadata:
-  name: mgr1030
+  name: server940
   namespace: default
 spec:
   baseServerId: 1000
@@ -14,7 +14,7 @@ spec:
   instances: 3
   podSpec:
     containers:
-    - image: release-ci.daocloud.io/demo/community-server:8.0.37
+    - image: release-ci.daocloud.io/demo/community-server:9.4.0
       name: mysql
       resources:
         limits:
@@ -24,7 +24,7 @@ spec:
           cpu: 100m
           memory: 100Mi
 #    - image: release-ci.daocloud.io/demo/community-operator:9.4.0-2.2.5
-    - image: release-ci.daocloud.io/demo/community-operator:mabing1029
+    - image: release-ci.daocloud.io/demo/community-operator:1028
       name: sidecar
       resources:
         limits:
@@ -34,7 +34,7 @@ spec:
           cpu: 1000m
           memory: 1Gi
     initContainers:
-    - image: release-ci.daocloud.io/demo/community-operator:mabing1029
+    - image: release-ci.daocloud.io/demo/community-operator:1028
       name: fixdatadir
       resources:
         limits:
@@ -43,7 +43,7 @@ spec:
         requests:
           cpu: 100m
           memory: 100Mi
-    - image: release-ci.daocloud.io/demo/community-operator:mabing1029
+    - image: release-ci.daocloud.io/demo/community-operator:1028
       name: initconf
       resources:
         limits:
@@ -52,7 +52,7 @@ spec:
         requests:
           cpu: 100m
           memory: 100Mi
-    - image: release-ci.daocloud.io/demo/community-server:8.0.37
+    - image: release-ci.daocloud.io/demo/community-server:9.4.0
       name: initmysql
       resources:
         limits:
@@ -63,16 +63,14 @@ spec:
           memory: 100Mi
   router:
     instances: 1
-    podSpec:
-      containers:
-        - image: 10.6.229.80/ghcr.m.daocloud.io/ksmartdata/community-router:8.2.0
-          name: router
-          resources:
-            limits:
-              cpu: "2"
-              memory: 2Gi
-            requests:
-              cpu: 100m
-              memory: 100Mi
   secretName: mypwds
   tlsUseSelfSigned: true
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mypwds
+stringData:
+  rootUser: root
+  rootHost: '%'
+  rootPassword: root@123!
