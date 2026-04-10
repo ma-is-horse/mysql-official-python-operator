@@ -1,0 +1,42 @@
+FROM container-registry.oracle.com/os/oraclelinux:8
+
+# 安装编译 Python 3.10 所需的依赖
+RUN dnf install -y gcc gcc-c++ make openssl-devel bzip2-devel libffi-devel \
+    zlib-devel readline-devel sqlite-devel wget tar \
+    && dnf clean all
+
+# 下载并编译安装 Python 3.10
+ARG PYTHON_VERSION=3.10.14
+RUN wget https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz \
+    && tar xzf Python-${PYTHON_VERSION}.tgz \
+    && cd Python-${PYTHON_VERSION} \
+    && ./configure --enable-optimizations --prefix=/usr/local \
+    && make -j$(nproc) \
+    && make altinstall \
+    && cd / && rm -rf Python-${PYTHON_VERSION} Python-${PYTHON_VERSION}.tgz
+
+# 设置 python3 和 pip3 链接
+RUN ln -sf /usr/local/bin/python3.10 /usr/local/bin/python3 \
+    && ln -sf /usr/local/bin/pip3.10 /usr/local/bin/pip3
+
+# 复制并安装 Python 依赖 (kopf==1.42.2, kubernetes==23.6.0)
+COPY docker-deps/requirements.txt /tmp/requirements.txt
+RUN python3 -m pip install --no-cache-dir --target=/usr/lib/mysqlsh/python-packages -r /tmp/requirements.txt
+
+# 安装 mysql-shell-8.3.0 (参照 Dockerfile)
+RUN rpm -U https://dev.mysql.com/get/mysql80-community-release-el8-9.noarch.rpm \
+    && dnf update -y && echo "[main]" > /etc/dnf/dnf.conf \
+    && dnf install --enablerepo=mysql-tools-community -y glibc-langpack-en mysql-shell-8.3.0 \
+    && dnf remove -y mysql80-community-release \
+    && dnf clean all
+
+RUN groupadd -g27 mysql && useradd -u27 -g27 mysql
+RUN mkdir /mysqlsh && chown 2 /mysqlsh
+
+COPY mysqloperator/ /usr/lib/mysqlsh/python-packages/mysqloperator
+
+# Workaround for BC issue with newest Python library for Kubernetes
+RUN sed -i "s/available_replicas=None,/available_replicas=0,/" /usr/lib/mysqlsh/python-packages/kubernetes/client/models/v1_stateful_set_status.py
+
+USER 2
+ENV HOME=/mysqlsh
