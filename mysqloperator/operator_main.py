@@ -18,10 +18,35 @@ from .controller import operator
 from .controller import k8sobject
 
 from .controller.kubeutils import k8s_cluster_domain
+import kubernetes
 
 
 k8sobject.g_component = "operator"
 k8sobject.g_host = os.getenv("HOSTNAME")
+
+
+def wait_for_api_server_stable(logger, max_attempts=30, delay=2):
+    """
+    Wait for K8s API Server to be fully ready (storage initialized).
+    This handles KEP-4568 where API Server returns 429 during storage initialization.
+    """
+    kubernetes.config.load_incluster_config()
+    api = kubernetes.client.CoreV1Api()
+    for attempt in range(max_attempts):
+        try:
+            # Try to list namespaces as a lightweight check
+            api.list_namespace(limit=1)
+            logger.info("API Server is ready")
+            return True
+        except kubernetes.client.exceptions.ApiException as e:
+            if e.status == 429 and "storage is (re)initializing" in str(e.body):
+                logger.warning(f"API Server storage initializing, waiting... (attempt {attempt + 1}/{max_attempts})")
+            else:
+                logger.warning(f"API Server not ready: {e.status} - {e.reason}, waiting... (attempt {attempt + 1}/{max_attempts})")
+        except Exception as e:
+            logger.warning(f"API Server connection failed: {e}, waiting... (attempt {attempt + 1}/{max_attempts})")
+        time.sleep(delay)
+    return False
 
 
 def main(argv):
@@ -40,6 +65,13 @@ def main(argv):
 
     # populate cached value
     k8s_cluster_domain(logging)
+
+    # Wait for API Server to be fully ready before starting kopf
+    # This handles the KEP-4568 issue where API Server returns 429 during storage initialization
+    logger = logging.getLogger(__name__)
+    if not wait_for_api_server_stable(logger):
+        logger.error("API Server did not become ready in time, exiting")
+        return 1
 
     loop = asyncio.get_event_loop()
 
