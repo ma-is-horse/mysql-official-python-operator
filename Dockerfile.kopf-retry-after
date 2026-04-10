@@ -1,0 +1,6 @@
+FROM ghcr.m.daocloud.io/ksmartdata/mgr-operator:8.3.0-2.1.3
+
+USER root
+COPY mysqloperator/ /usr/lib/mysqlsh/python-packages/mysqloperator/
+RUN pip3 uninstall -y kopf && \
+    pip3 install kopf-retry-after==1.35.4.post1

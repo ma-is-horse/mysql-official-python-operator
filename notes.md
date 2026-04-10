@@ -161,3 +161,8 @@ def restart_deployment(cluster: InnoDBCluster, logger: Logger)->None:
         logger.info(f"Conditions not met, giving up on restarting the cluster {namespace_name}")
         return None
 ```
+
+## kopf
+最初的kopf版本是: 1.35.4
+修复429的commit: fd054120
+升级到python3.10的tag: tag 1.39.0, 在commit: f32b92f
