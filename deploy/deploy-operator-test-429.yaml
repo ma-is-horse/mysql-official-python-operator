@@ -88,12 +88,11 @@ spec:
       # initContainer: 生成自签名证书 + 渲染 nginx.conf 中的 API Server 地址
       initContainers:
         - name: init-proxy
-          image: 10.6.178.191:5000/nginx:1.25-alpine
+          image: 10.6.178.191:5000/nginx:1.25-alpine-openssl-latest
           command: ["/bin/sh", "-c"]
           args:
             - |
               # 生成自签名证书给 nginx 用
-              apk add --no-cache openssl
               openssl req -x509 -nodes -days 1 \
                 -newkey rsa:2048 \
                 -keyout /tmp/proxy-tls/tls.key \
@@ -124,7 +123,7 @@ spec:
       containers:
         # sidecar: nginx 反向代理
         - name: api-proxy
-          image: 10.6.178.191:5000/nginx:1.25-alpine
+          image: 10.6.178.191:5000/nginx:1.25-alpine-openssl-latest
           ports:
             - containerPort: 6443
           volumeMounts:
