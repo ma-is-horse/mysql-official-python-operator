@@ -1,0 +1,13 @@
+FROM nginx:1.25-alpine
+
+# 安装 openssl
+RUN apk add --no-cache openssl
+
+# 复制 nginx 配置（可选，如果需要自定义配置）
+# COPY nginx.conf /etc/nginx/nginx.conf
+
+# 暴露端口
+EXPOSE 80 443
+
+# 使用默认的 nginx 启动命令
+CMD ["nginx", "-g", "daemon off;"]
