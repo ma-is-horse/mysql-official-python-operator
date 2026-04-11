@@ -1,0 +1,212 @@
+# 用于测试 KEP-4568 (API Server 429) 场景的部署文件
+# nginx sidecar 拦截 clusterkopfpeerings 请求并返回 429，其他请求正常代理到 API Server
+#
+# 使用方法:
+#   1. 确保已部署 CRDs: kubectl apply -f deploy/deploy-crds.yaml
+#   2. 部署本文件:      kubectl apply -f deploy/deploy-operator-test-429.yaml
+#   3. 查看日志:        kubectl -n mysql-operator logs -f deployment/mysql-operator -c mysql-operator
+#   4. 测试完清理:      kubectl delete -f deploy/deploy-operator-test-429.yaml
+#
+# 环境变量控制:
+#   MOCK_429_ENABLED: "true" 开启 429 拦截, "false" 关闭 (默认 "true")
+#   可通过编辑 ConfigMap 中的 nginx.conf 来控制拦截行为
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-proxy-config
+  namespace: mcamel-system
+data:
+  nginx.conf: |
+    worker_processes 1;
+    error_log /var/log/nginx/error.log warn;
+
+    events {
+        worker_connections 128;
+    }
+
+    http {
+        log_format main '$remote_addr - $request - $status';
+        access_log /var/log/nginx/access.log main;
+
+        upstream kube_apiserver {
+            server KUBERNETES_SERVICE_HOST_PLACEHOLDER:KUBERNETES_SERVICE_PORT_PLACEHOLDER;
+        }
+
+        server {
+            listen 6443 ssl;
+
+            ssl_certificate     /var/run/secrets/kubernetes.io/serviceaccount/ca.crt;
+            ssl_certificate_key /tmp/proxy-tls/tls.key;
+
+            # 对 clusterkopfpeerings 请求返回 429
+            location ~ ^/apis/zalando\.org/v1/(clusterkopfpeerings|namespaces/.*/kopfpeerings) {
+                default_type application/json;
+                return 429 '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"storage is (re)initializing","reason":"TooManyRequests","details":{"retryAfterSeconds":1},"code":429}';
+            }
+
+            # 其他请求正常代理到 API Server
+            location / {
+                proxy_pass https://kube_apiserver;
+                proxy_ssl_verify off;
+                proxy_set_header Authorization $http_authorization;
+                proxy_set_header Accept $http_accept;
+                proxy_set_header Content-Type $http_content_type;
+                proxy_read_timeout 300s;
+                proxy_connect_timeout 10s;
+            }
+        }
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-operator
+  namespace: mcamel-system
+  labels:
+    version: "1.0"
+    app.kubernetes.io/name: mysql-operator
+    app.kubernetes.io/instance: mysql-operator
+    app.kubernetes.io/version: 8.3.0-2.1.2
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/managed-by: mysql-operator
+    app.kubernetes.io/created-by: mysql-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: mysql-operator
+  template:
+    metadata:
+      labels:
+        name: mysql-operator
+    spec:
+      serviceAccountName: mysql-operator-sa
+
+      # initContainer: 生成自签名证书 + 渲染 nginx.conf 中的 API Server 地址
+      initContainers:
+        - name: init-proxy
+          image: 10.6.178.191:5000/nginx:1.25-alpine
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # 生成自签名证书给 nginx 用
+              apk add --no-cache openssl
+              openssl req -x509 -nodes -days 1 \
+                -newkey rsa:2048 \
+                -keyout /tmp/proxy-tls/tls.key \
+                -out /tmp/proxy-tls/tls.crt \
+                -subj "/CN=localhost"
+
+              # 将 ConfigMap 中的 nginx.conf 模板渲染为实际配置
+              sed \
+                -e "s/KUBERNETES_SERVICE_HOST_PLACEHOLDER/${KUBERNETES_SERVICE_HOST}/" \
+                -e "s/KUBERNETES_SERVICE_PORT_PLACEHOLDER/${KUBERNETES_SERVICE_PORT}/" \
+                /etc/nginx-template/nginx.conf > /tmp/proxy-config/nginx.conf
+
+              echo "=== Generated nginx.conf ==="
+              cat /tmp/proxy-config/nginx.conf
+          env:
+            - name: KUBERNETES_SERVICE_HOST
+              value: ""  # 会被 K8s 自动注入
+            - name: KUBERNETES_SERVICE_PORT
+              value: ""  # 会被 K8s 自动注入
+          volumeMounts:
+            - name: proxy-tls
+              mountPath: /tmp/proxy-tls
+            - name: proxy-config-rendered
+              mountPath: /tmp/proxy-config
+            - name: proxy-config-template
+              mountPath: /etc/nginx-template
+
+      containers:
+        # sidecar: nginx 反向代理
+        - name: api-proxy
+          image: 10.6.178.191:5000/nginx:1.25-alpine
+          ports:
+            - containerPort: 6443
+          volumeMounts:
+            - name: proxy-config-rendered
+              mountPath: /etc/nginx
+              readOnly: true
+            - name: proxy-tls
+              mountPath: /tmp/proxy-tls
+              readOnly: true
+            - name: sa-token
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+          resources:
+            limits:
+              cpu: 100m
+              memory: 64Mi
+
+        # operator 主容器
+        - name: mysql-operator
+          image: ghcr.m.daocloud.io/ksmartdata/community-operator:8.3.0-2.1.2
+          imagePullPolicy: IfNotPresent
+          args:
+            [
+              "mysqlsh",
+              "--log-level=@INFO",
+              "--pym",
+              "mysqloperator",
+              "operator",
+            ]
+          env:
+            - name: MYSQLSH_USER_CONFIG_HOME
+              value: /mysqlsh
+            - name: MYSQLSH_CREDENTIAL_STORE_SAVE_PASSWORDS
+              value: never
+            # 关键: 让 operator 的 K8s client 连接本地 nginx 代理而不是真正的 API Server
+            - name: KUBERNETES_SERVICE_HOST
+              value: "127.0.0.1"
+            - name: KUBERNETES_SERVICE_PORT
+              value: "6443"
+          readinessProbe:
+            exec:
+              command:
+              - cat
+              - /tmp/mysql-operator-ready
+            initialDelaySeconds: 1
+            periodSeconds: 3
+          volumeMounts:
+            - name: mysqlsh-home
+              mountPath: /mysqlsh
+            - name: tmpdir
+              mountPath: /tmp
+          securityContext:
+            runAsUser: 2
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+
+      volumes:
+        - name: mysqlsh-home
+          emptyDir: {}
+        - name: tmpdir
+          emptyDir: {}
+        - name: proxy-tls
+          emptyDir: {}
+        - name: proxy-config-template
+          configMap:
+            name: api-proxy-config
+        - name: proxy-config-rendered
+          emptyDir: {}
+        - name: sa-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  expirationSeconds: 3600
+                  path: token
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        fieldPath: metadata.namespace

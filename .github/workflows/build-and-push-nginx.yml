@@ -1,10 +1,10 @@
-name: Build and Push Docker Image
+name: Build and Push Nginx OpenSSL Image
 
 on:
   workflow_dispatch:
 
 env:
-  DOCKER_REPO: ${{ vars.DOCKER_REPO }}
+  DOCKER_REPO: mabing/nginx
 
 jobs:
   build-and-push:
@@ -29,9 +29,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.claude
+          file: Dockerfile.nginx-openssl
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ env.DOCKER_REPO }}:${{ github.sha }}
-            ${{ env.DOCKER_REPO }}:latest
+            ${{ env.DOCKER_REPO }}:1.25-alpine-openssl-${{ github.sha }}
+            ${{ env.DOCKER_REPO }}:1.25-alpine-openssl-latest
