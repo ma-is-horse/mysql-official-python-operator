@@ -23,7 +23,8 @@ RUN ln -sf /usr/local/bin/python3.10 /usr/local/bin/python3 \
 COPY docker-deps/requirements.txt /tmp/requirements.txt
 RUN python3 -m pip install --no-cache-dir --target=/usr/lib/mysqlsh/python-packages -r /tmp/requirements.txt
 
-# 安装 mysql-shell-8.3.0 (支持 amd64/arm64 多架构)
+# 安装 mysql-shell-8.4.0（内置 Python 3.10，解决 kopf 1.42.2 兼容性问题）
+# mysql-shell 8.3.0 内置 Python 3.9，不满足 kopf 1.42.2 的 Python 3.10 要求
 ARG TARGETARCH
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
         MYSQL_ARCH="x86_64"; \
@@ -32,7 +33,7 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
     else \
         echo "Unsupported architecture: $TARGETARCH" && exit 1; \
     fi && \
-    dnf install -y "https://dev.mysql.com/get/Downloads/MySQL-Shell/mysql-shell-8.3.0-1.el8.${MYSQL_ARCH}.rpm" \
+    dnf install -y "https://dev.mysql.com/get/Downloads/MySQL-Shell/mysql-shell-8.4.0-1.el8.${MYSQL_ARCH}.rpm" \
     && dnf clean all
 
 RUN groupadd -g27 mysql && useradd -u27 -g27 mysql

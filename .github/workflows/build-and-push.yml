@@ -2,6 +2,12 @@ name: Build and Push Docker Image
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Docker image tag (optional)'
+        required: false
+        default: ''
+        type: string
 
 env:
   DOCKER_REPO: ${{ vars.DOCKER_REPO }}
@@ -25,6 +31,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Set image tags
+        id: set-tags
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "tags<<EOF" >> $GITHUB_OUTPUT
+            echo "${{ env.DOCKER_REPO }}:${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "tags<<EOF" >> $GITHUB_OUTPUT
+            echo "${{ env.DOCKER_REPO }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "${{ env.DOCKER_REPO }}:latest" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -32,6 +52,4 @@ jobs:
           file: Dockerfile.claude
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ env.DOCKER_REPO }}:${{ github.sha }}
-            ${{ env.DOCKER_REPO }}:latest
+          tags: ${{ steps.set-tags.outputs.tags }}
