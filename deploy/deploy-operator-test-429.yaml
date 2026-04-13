@@ -1,15 +1,13 @@
 # 用于测试 KEP-4568 (API Server 429) 场景的部署文件
-# nginx sidecar 拦截 clusterkopfpeerings 请求并返回 429，其他请求正常代理到 API Server
+# Python sidecar 代理：对 clusterkopfpeerings 请求返回 429，其他请求正常代理到 API Server
+# Python 代理用集群 CA 签发的证书做 TLS，operator 的 K8s client 能正常验证
 #
 # 使用方法:
 #   1. 确保已部署 CRDs: kubectl apply -f deploy/deploy-crds.yaml
 #   2. 部署本文件:      kubectl apply -f deploy/deploy-operator-test-429.yaml
-#   3. 查看日志:        kubectl -n mysql-operator logs -f deployment/mysql-operator -c mysql-operator
-#   4. 测试完清理:      kubectl delete -f deploy/deploy-operator-test-429.yaml
-#
-# 环境变量控制:
-#   MOCK_429_ENABLED: "true" 开启 429 拦截, "false" 关闭 (默认 "true")
-#   可通过编辑 ConfigMap 中的 nginx.conf 来控制拦截行为
+#   3. 查看 operator 日志: kubectl -n mcamel-system logs -f deployment/mysql-operator -c mysql-operator
+#   4. 查看 proxy 日志:    kubectl -n mcamel-system logs -f deployment/mysql-operator -c api-proxy
+#   5. 测试完清理:      kubectl delete -f deploy/deploy-operator-test-429.yaml
 
 ---
 apiVersion: v1
@@ -18,47 +16,241 @@ metadata:
   name: api-proxy-config
   namespace: mcamel-system
 data:
-  nginx.conf: |
-    worker_processes 1;
-    error_log /var/log/nginx/error.log warn;
+  proxy.py: |
+    #!/usr/bin/env python3
+    """
+    HTTPS reverse proxy sidecar for testing KEP-4568 (API Server 429).
+    - Returns 429 for clusterkopfpeerings requests
+    - Streams all other requests to the real API Server (supports watch)
+    """
+    import os
+    import ssl
+    import json
+    import socket
+    import threading
+    from http.server import HTTPServer, BaseHTTPRequestHandler
 
-    events {
-        worker_connections 128;
-    }
+    SA = "/var/run/secrets/kubernetes.io/serviceaccount"
+    CA_CERT    = f"{SA}/ca.crt"
+    TOKEN_FILE = f"{SA}/token"
+    CERT_FILE  = "/tmp/proxy-tls/tls.crt"
+    KEY_FILE   = "/tmp/proxy-tls/tls.key"
 
-    http {
-        log_format main '$remote_addr - $request - $status';
-        access_log /var/log/nginx/access.log main;
+    API_HOST    = os.environ["KUBERNETES_SERVICE_HOST"]
+    API_PORT    = int(os.environ["KUBERNETES_SERVICE_PORT"])
+    LISTEN_PORT = 16443
+    CHUNK_SIZE  = 4096
 
-        upstream kube_apiserver {
-            server KUBERNETES_SERVICE_HOST_PLACEHOLDER:KUBERNETES_SERVICE_PORT_PLACEHOLDER;
-        }
+    BLOCK_PATTERNS = [
+        "/apis/zalando.org/v1/clusterkopfpeerings",
+        "/apis/zalando.org/v1/namespaces/",
+    ]
 
-        server {
-            listen 6443 ssl;
+    RESPONSE_429 = json.dumps({
+        "kind": "Status", "apiVersion": "v1", "metadata": {},
+        "status": "Failure", "message": "storage is (re)initializing",
+        "reason": "TooManyRequests", "details": {"retryAfterSeconds": 1}, "code": 429
+    }).encode()
 
-            ssl_certificate     /var/run/secrets/kubernetes.io/serviceaccount/ca.crt;
-            ssl_certificate_key /tmp/proxy-tls/tls.key;
+    def should_block(path):
+        return any(path.startswith(p) for p in BLOCK_PATTERNS)
 
-            # 对 clusterkopfpeerings 请求返回 429
-            location ~ ^/apis/zalando\.org/v1/(clusterkopfpeerings|namespaces/.*/kopfpeerings) {
-                default_type application/json;
-                return 429 '{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"storage is (re)initializing","reason":"TooManyRequests","details":{"retryAfterSeconds":1},"code":429}';
-            }
+    def get_token():
+        with open(TOKEN_FILE) as f:
+            return f.read().strip()
 
-            # 其他请求正常代理到 API Server
-            location / {
-                proxy_pass https://kube_apiserver;
-                proxy_ssl_verify off;
-                proxy_set_header Authorization $http_authorization;
-                proxy_set_header Accept $http_accept;
-                proxy_set_header Content-Type $http_content_type;
-                proxy_read_timeout 300s;
-                proxy_connect_timeout 10s;
-            }
-        }
-    }
+    # SSL context for connecting to the real API Server
+    upstream_ctx = ssl.create_default_context(cafile=CA_CERT)
 
+    class ProxyHandler(BaseHTTPRequestHandler):
+        def log_message(self, fmt, *args):
+            print(f"[proxy] {self.address_string()} {fmt % args}", flush=True)
+
+        def do_request(self):
+            path = self.path
+
+            if should_block(path):
+                print(f"[proxy] BLOCK {self.command} {path} -> 429", flush=True)
+                self.send_response(429)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Retry-After", "1")
+                self.send_header("Content-Length", str(len(RESPONSE_429)))
+                self.end_headers()
+                self.wfile.write(RESPONSE_429)
+                self.wfile.flush()
+                return
+
+            # 建立到真实 API Server 的 TLS 连接，流式转发
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length) if content_length > 0 else b""
+
+            # 直接用 socket 连接上游，流式转发请求和响应
+            try:
+                raw_sock = socket.create_connection((API_HOST, API_PORT), timeout=10)
+                upstream_sock = upstream_ctx.wrap_socket(raw_sock, server_hostname=API_HOST)
+            except Exception as e:
+                print(f"[proxy] upstream connect error: {e}", flush=True)
+                self.send_error(502, str(e))
+                return
+
+            try:
+                # 转发请求行 + headers
+                token = get_token()
+                req_line = f"{self.command} {path} HTTP/1.1\r\n"
+                headers_to_forward = [
+                    f"Host: {API_HOST}:{API_PORT}",
+                    f"Authorization: Bearer {token}",
+                ]
+                for key in ("Accept", "Content-Type", "User-Agent",
+                            "Transfer-Encoding", "Connection"):
+                    val = self.headers.get(key)
+                    if val:
+                        headers_to_forward.append(f"{key}: {val}")
+                if body:
+                    headers_to_forward.append(f"Content-Length: {len(body)}")
+
+                request = req_line + "\r\n".join(headers_to_forward) + "\r\n\r\n"
+                upstream_sock.sendall(request.encode() + body)
+
+                # 流式读取响应头
+                resp_buf = b""
+                while b"\r\n\r\n" not in resp_buf:
+                    chunk = upstream_sock.recv(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    resp_buf += chunk
+
+                header_end = resp_buf.index(b"\r\n\r\n")
+                header_part = resp_buf[:header_end].decode(errors="replace")
+                leftover = resp_buf[header_end + 4:]
+
+                # 解析状态行
+                lines = header_part.split("\r\n")
+                status_line = lines[0]
+                status_code = int(status_line.split(" ", 2)[1])
+
+                # 转发响应头
+                self.send_response(status_code)
+                is_chunked = False
+                content_len = None
+                for line in lines[1:]:
+                    if ":" in line:
+                        k, v = line.split(":", 1)
+                        k, v = k.strip(), v.strip()
+                        if k.lower() == "transfer-encoding" and "chunked" in v.lower():
+                            is_chunked = True
+                        if k.lower() == "content-length":
+                            content_len = int(v)
+                        self.send_header(k, v)
+                self.end_headers()
+
+                # 流式转发响应 body
+                if leftover:
+                    self.wfile.write(leftover)
+                    self.wfile.flush()
+
+                upstream_sock.settimeout(300)
+                while True:
+                    try:
+                        chunk = upstream_sock.recv(CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        self.wfile.flush()
+                    except socket.timeout:
+                        break
+                    except Exception:
+                        break
+
+            except Exception as e:
+                print(f"[proxy] stream error: {e}", flush=True)
+            finally:
+                upstream_sock.close()
+
+        do_GET    = do_request
+        do_POST   = do_request
+        do_PUT    = do_request
+        do_PATCH  = do_request
+        do_DELETE = do_request
+        do_HEAD   = do_request
+
+    def main():
+        server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        server_ctx.load_cert_chain(certfile=CERT_FILE, keyfile=KEY_FILE)
+
+        server = HTTPServer(("0.0.0.0", LISTEN_PORT), ProxyHandler)
+        server.socket = server_ctx.wrap_socket(server.socket, server_side=True)
+        print(f"[proxy] Listening on :{LISTEN_PORT} -> {API_HOST}:{API_PORT}", flush=True)
+        print(f"[proxy] Blocking: {BLOCK_PATTERNS}", flush=True)
+        server.serve_forever()
+
+    if __name__ == "__main__":
+        main()
+
+  gen-cert.sh: |
+    #!/bin/sh
+    # 生成自签名证书，并将自签名 CA 与集群 CA 合并
+    # mysql-operator 容器挂载合并后的 CA，从而信任代理的自签名证书
+    set -e
+
+    SA=/var/run/secrets/kubernetes.io/serviceaccount
+    MERGED=/tmp/merged-sa
+
+    echo "[init] Generating self-signed CA and server cert..."
+    # 生成自签名 CA
+    openssl genrsa -out /tmp/proxy-tls/ca.key 2048
+    openssl req -x509 -new -nodes \
+      -key /tmp/proxy-tls/ca.key \
+      -days 1 \
+      -out /tmp/proxy-tls/ca.crt \
+      -subj "/CN=proxy-ca"
+
+    # 用自签名 CA 签发服务器证书（SAN 包含 127.0.0.1）
+    openssl genrsa -out /tmp/proxy-tls/tls.key 2048
+    openssl req -new \
+      -key /tmp/proxy-tls/tls.key \
+      -out /tmp/proxy-tls/tls.csr \
+      -subj "/CN=127.0.0.1"
+    printf '[v3_req]\nsubjectAltName=IP:127.0.0.1\n' > /tmp/proxy-tls/san.ext
+    openssl x509 -req -days 1 \
+      -in /tmp/proxy-tls/tls.csr \
+      -CA /tmp/proxy-tls/ca.crt \
+      -CAkey /tmp/proxy-tls/ca.key \
+      -CAcreateserial \
+      -out /tmp/proxy-tls/tls.crt \
+      -extfile /tmp/proxy-tls/san.ext \
+      -extensions v3_req
+
+    # 合并集群 CA + 自签名 CA，写入共享目录
+    # mysql-operator 容器会挂载这个目录覆盖默认的 SA token 路径
+    mkdir -p $MERGED
+    cp $SA/token $MERGED/token
+    cp $SA/namespace $MERGED/namespace
+    cat $SA/ca.crt /tmp/proxy-tls/ca.crt > $MERGED/ca.crt
+
+    echo "[init] Merged CA written to $MERGED/ca.crt"
+    echo "[init] Done."
+
+---
+# 允许 mysql-operator-sa 创建/approve/删除 CSR（仅用于测试 429 场景）
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mysql-operator-csr-approver
+rules: []
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mysql-operator-csr-approver
+subjects:
+  - kind: ServiceAccount
+    name: mysql-operator-sa
+    namespace: mcamel-system
+roleRef:
+  kind: ClusterRole
+  name: mysql-operator-csr-approver
+  apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -85,84 +277,60 @@ spec:
     spec:
       serviceAccountName: mysql-operator-sa
 
-      # initContainer: 生成自签名证书 + 渲染 nginx.conf 中的 API Server 地址
-      initContainers:
-        - name: init-proxy
-          image: 10.6.178.191:5000/nginx:1.25-alpine-openssl-latest
+      containers:
+        # sidecar: 先生成证书，再启动 Python HTTPS 反向代理
+        - name: api-proxy
+          image: ghcr.m.daocloud.io/ksmartdata/community-operator:8.3.0-2.1.2
           command: ["/bin/sh", "-c"]
           args:
             - |
-              # 生成自签名证书给 nginx 用
-              openssl req -x509 -nodes -days 1 \
-                -newkey rsa:2048 \
-                -keyout /tmp/proxy-tls/tls.key \
-                -out /tmp/proxy-tls/tls.crt \
-                -subj "/CN=localhost"
-
-              # 将 ConfigMap 中的 nginx.conf 模板渲染为实际配置
-              sed \
-                -e "s/KUBERNETES_SERVICE_HOST_PLACEHOLDER/${KUBERNETES_SERVICE_HOST}/" \
-                -e "s/KUBERNETES_SERVICE_PORT_PLACEHOLDER/${KUBERNETES_SERVICE_PORT}/" \
-                /etc/nginx-template/nginx.conf > /tmp/proxy-config/nginx.conf
-
-              echo "=== Generated nginx.conf ==="
-              cat /tmp/proxy-config/nginx.conf
-          env:
-            - name: KUBERNETES_SERVICE_HOST
-              value: ""  # 会被 K8s 自动注入
-            - name: KUBERNETES_SERVICE_PORT
-              value: ""  # 会被 K8s 自动注入
+              set -e
+              /etc/proxy-scripts/gen-cert.sh && exec python3 /etc/proxy-scripts/proxy.py
           volumeMounts:
             - name: proxy-tls
               mountPath: /tmp/proxy-tls
-            - name: proxy-config-rendered
-              mountPath: /tmp/proxy-config
-            - name: proxy-config-template
-              mountPath: /etc/nginx-template
-
-      containers:
-        # sidecar: nginx 反向代理
-        - name: api-proxy
-          image: 10.6.178.191:5000/nginx:1.25-alpine-openssl-latest
-          ports:
-            - containerPort: 6443
-          volumeMounts:
-            - name: proxy-config-rendered
-              mountPath: /etc/nginx
-              readOnly: true
-            - name: proxy-tls
-              mountPath: /tmp/proxy-tls
-              readOnly: true
-            - name: sa-token
-              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+            - name: merged-sa
+              mountPath: /tmp/merged-sa
+            - name: proxy-scripts
+              mountPath: /etc/proxy-scripts
               readOnly: true
           resources:
             limits:
-              cpu: 100m
-              memory: 64Mi
+              cpu: 200m
+              memory: 128Mi
 
         # operator 主容器
         - name: mysql-operator
           image: ghcr.m.daocloud.io/ksmartdata/community-operator:8.3.0-2.1.2
           imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
           args:
-            [
-              "mysqlsh",
-              "--log-level=@INFO",
-              "--pym",
-              "mysqloperator",
-              "operator",
-            ]
+            - |
+              # 等待 api-proxy 完成证书生成并写入 merged-sa
+              echo "[operator] Waiting for merged-sa/token to be ready..."
+              until [ -f /var/run/secrets/kubernetes.io/serviceaccount/token ]; do
+                sleep 1
+              done
+              echo "[operator] token ready, starting operator..."
+              exec mysqlsh --log-level=@INFO --pym mysqloperator operator
           env:
             - name: MYSQLSH_USER_CONFIG_HOME
               value: /mysqlsh
             - name: MYSQLSH_CREDENTIAL_STORE_SAVE_PASSWORDS
               value: never
-            # 关键: 让 operator 的 K8s client 连接本地 nginx 代理而不是真正的 API Server
+            # 跳过反向 DNS 查询 cluster domain，直接指定
+            - name: MYSQL_OPERATOR_K8S_CLUSTER_DOMAIN
+              value: "cluster.local"
+            # 让 operator 的 K8s client 连接本地 Python 代理（16443）
             - name: KUBERNETES_SERVICE_HOST
               value: "127.0.0.1"
             - name: KUBERNETES_SERVICE_PORT
-              value: "6443"
+              value: "16443"
+            # 让 aiohttp/ssl 信任合并后的 CA（包含自签名代理 CA）
+            - name: SSL_CERT_FILE
+              value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
           readinessProbe:
             exec:
               command:
@@ -175,6 +343,11 @@ spec:
               mountPath: /mysqlsh
             - name: tmpdir
               mountPath: /tmp
+            # 挂载合并了自签名 CA 的 SA 目录，覆盖默认路径
+            # 这样 K8s client 验证代理证书时能通过
+            - name: merged-sa
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
           securityContext:
             runAsUser: 2
             allowPrivilegeEscalation: false
@@ -188,24 +361,9 @@ spec:
           emptyDir: {}
         - name: proxy-tls
           emptyDir: {}
-        - name: proxy-config-template
+        - name: merged-sa
+          emptyDir: {}
+        - name: proxy-scripts
           configMap:
             name: api-proxy-config
-        - name: proxy-config-rendered
-          emptyDir: {}
-        - name: sa-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  expirationSeconds: 3600
-                  path: token
-              - configMap:
-                  name: kube-root-ca.crt
-                  items:
-                    - key: ca.crt
-                      path: ca.crt
-              - downwardAPI:
-                  items:
-                    - path: namespace
-                      fieldRef:
-                        fieldPath: metadata.namespace
+            defaultMode: 0755
