@@ -23,8 +23,7 @@ RUN ln -sf /usr/local/bin/python3.10 /usr/local/bin/python3 \
 COPY docker-deps/requirements.txt /tmp/requirements.txt
 RUN python3 -m pip install --no-cache-dir --target=/usr/lib/mysqlsh/python-packages -r /tmp/requirements.txt
 
-# 安装 mysql-shell-8.4.0（内置 Python 3.10，解决 kopf 1.42.2 兼容性问题）
-# mysql-shell 8.3.0 内置 Python 3.9，不满足 kopf 1.42.2 的 Python 3.10 要求
+# 安装 mysql-shell-8.4.0
 ARG TARGETARCH
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
         MYSQL_ARCH="x86_64"; \
@@ -36,6 +35,34 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
     dnf install -y "https://dev.mysql.com/get/Downloads/MySQL-Shell/mysql-shell-8.4.0-1.el8.${MYSQL_ARCH}.rpm" \
     && dnf clean all
 
+# 创建 mysqlsh stub 模块，让 operator 能用 Python 3.10 直接运行
+# operator_main.py 只用了 mysqlsh.globals.shell.options，其他模块用 mysqlsh 做真实 MySQL 操作
+# operator 角色只需要 K8s 控制，不直接调用 MySQL，所以 stub 足够
+RUN python3 -c "
+import os
+stub_dir = '/usr/local/lib/python3.10/site-packages/mysqlsh'
+os.makedirs(stub_dir, exist_ok=True)
+
+# mysqlsh/__init__.py
+with open(stub_dir + '/__init__.py', 'w') as f:
+    f.write('''
+class _Options:
+    useWizards = False
+    logLevel = 4
+    verbose = 0
+    def __setattr__(self, k, v): pass
+
+class _Shell:
+    options = _Options()
+
+class _Globals:
+    shell = _Shell()
+
+globals = _Globals()
+''')
+print('mysqlsh stub created at', stub_dir)
+"
+
 RUN groupadd -g27 mysql && useradd -u27 -g27 mysql
 RUN mkdir /mysqlsh && chown 2 /mysqlsh
 
@@ -46,3 +73,4 @@ RUN sed -i "s/available_replicas=None,/available_replicas=0,/" /usr/lib/mysqlsh/
 
 USER 2
 ENV HOME=/mysqlsh
+ENV PYTHONPATH=/usr/lib/mysqlsh/python-packages
