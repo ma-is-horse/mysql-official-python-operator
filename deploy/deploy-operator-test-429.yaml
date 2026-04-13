@@ -29,6 +29,10 @@ data:
     import socket
     import threading
     from http.server import HTTPServer, BaseHTTPRequestHandler
+    from socketserver import ThreadingMixIn
+
+    class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+        daemon_threads = True
 
     SA = "/var/run/secrets/kubernetes.io/serviceaccount"
     CA_CERT    = f"{SA}/ca.crt"
@@ -178,7 +182,7 @@ data:
         server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         server_ctx.load_cert_chain(certfile=CERT_FILE, keyfile=KEY_FILE)
 
-        server = HTTPServer(("0.0.0.0", LISTEN_PORT), ProxyHandler)
+        server = ThreadingHTTPServer(("0.0.0.0", LISTEN_PORT), ProxyHandler)
         server.socket = server_ctx.wrap_socket(server.socket, server_side=True)
         print(f"[proxy] Listening on :{LISTEN_PORT} -> {API_HOST}:{API_PORT}", flush=True)
         print(f"[proxy] Blocking: {BLOCK_PATTERNS}", flush=True)
