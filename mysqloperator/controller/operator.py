@@ -12,6 +12,7 @@ from . import config, utils
 from .group_monitor import g_group_monitor
 import kopf
 import logging
+import os
 
 
 # These have to be imported so that kopf sees the annotations in those files
@@ -30,6 +31,10 @@ def on_startup(settings: kopf.OperatorSettings, logger: Logger, *args, **_):
 
     # don't post logger.debug() calls as k8s events
     settings.posting.level = logging.INFO
+
+    if os.environ.get("KOPF_STANDALONE", "").lower() in ("1", "true", "yes"):
+        logger.info("KOPF_STANDALONE is set, disabling kopf peering")
+        settings.peering.standalone = True
 
     # Change the annotation field for storing kopf state, so that the main operator
     # and the pod controller don't collide

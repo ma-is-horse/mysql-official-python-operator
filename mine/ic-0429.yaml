@@ -1,0 +1,134 @@
+apiVersion: mysql.oracle.com/v2
+kind: InnoDBCluster
+metadata:
+  annotations:
+    input: '{"cluster":"mabing","namespace":"default","name":"test0429","version":"8.0.37","replicas":3,"storage_class_name":"local-path","storage_capacity":"1Gi","root_password":"riNUCtIT3MmEyGU3AJ2Lew==","service_type":1,"ports":[{"name":"mysql","protocol":"TCP","port":3306,"target_port":3306}],"cpu_request":"0.1","cpu_limit":"2","memory_request":"0.1Gi","memory_limit":"2Gi","conf":"[mysqld]\ndatadir
+      = /var/lib/mysql #MySQL数据文件的目录。\nenforce_gtid_consistency = ON #根据此变量的值，服务器通过允许仅能安全记录使用GTID的语句的执行来强制GTID一致性。\ngtid_mode
+      = ON #控制是否启用基于GTID的日志记录以及日志可以包含哪种类型的事务。\ninnodb_log_file_size = 2G #日志组中每个日志文件的大小。\nlocal-infile
+      = 1 #启用或禁用LOAD DATA LOCAL语句。\nlog_bin = ic-metrics #指定用于二进制日志文件的基本名称。\nlog_error_suppression_list
+      = MY-013360 #适用于用于错误日志的事件，并指定在发生优先级为“警告”或“信息”的事件时要抑制哪些事件\nlog_error_verbosity
+      = 3 #设置错误日志的详细程度。\nlog_output = FILE \nlong_query_time = 5 \nloose_auth_socket
+      = FORCE_PLUS_PERMANENT #控制服务器在启动时如何加载audit_log插件。\nloose_group_replication_recovery_use_ssl
+      = 1 #指定是否使用SSL连接到远程复制源。\nloose_mysqlx_socket = /var/run/mysqld/mysqlx.sock #MySQL
+      X协议监听的Unix套接字文件的路径。\nmax_connections = 512 #最大允许的同时客户端连接数。\nrelay_log_info_repository
+      = TABLE #决定slave同步的位置信息记录在哪里。\nskip_log_error = OFF #如果在配置文件中设置了log_error，则此参数会导致
+      MySQL 忽略 log_error 变量。\nskip_slave_start = ON #告诉复制服务器在启动时不要启动复制I/O（接收器）和SQL（应用器）线程。\nslow_query_log
+      = OFF \nsocket = /var/run/mysqld/mysql.sock #MySQL服务器监听的Unix套接字文件的路径。","conf_template_name":"mcamel-common-template-mgr-8037","php_admin_service_type":1,"php_admin_cpu_request":"0.1","php_admin_cpu_limit":"1","php_admin_memory_request":"0.5Gi","php_admin_memory_limit":"1Gi","affinity":{},"service_monitor_interval":"30s","instance_type":3,"mgr_router_config":{"replicas":1,"cpu_request":"0.1","cpu_limit":"1","memory_request":"0.5Gi","memory_limit":"1Gi"}}'
+    mysql.oracle.com/cluster-info: '{"initialDataSource": "blank", "createOptions":
+      {"gtidSetIsComplete": true, "manualStartOnBoot": true, "memberSslMode": "REQUIRED",
+      "exitStateAction": "ABORT_SERVER"}}'
+    mysql.oracle.com/mysql-operator-version: 8.3.0-2.1.2
+  name: test0429
+  namespace: default
+spec:
+  baseServerId: 1000
+  datadirVolumeClaimTemplate:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      limits:
+        storage: 1Gi
+      requests:
+        storage: 1Gi
+    storageClassName: local-path
+  imageRepository: ghcr.m.daocloud.io/ksmartdata
+  instances: 3
+  metrics:
+    enable: true
+    image: ""
+    monitor: false
+    monitorSpec: {}
+  mycnf: "[mysqld]\ndatadir = /var/lib/mysql #MySQL数据文件的目录。\nenforce_gtid_consistency
+    = ON #根据此变量的值，服务器通过允许仅能安全记录使用GTID的语句的执行来强制GTID一致性。\ngtid_mode = ON #控制是否启用基于GTID的日志记录以及日志可以包含哪种类型的事务。\ninnodb_log_file_size
+    = 2G #日志组中每个日志文件的大小。\nlocal-infile = 1 #启用或禁用LOAD DATA LOCAL语句。\nlog_bin = ic-metrics
+    #指定用于二进制日志文件的基本名称。\nlog_error_suppression_list = MY-013360 #适用于用于错误日志的事件，并指定在发生优先级为“警告”或“信息”的事件时要抑制哪些事件\nlog_error_verbosity
+    = 3 #设置错误日志的详细程度。\nlog_output = FILE \nlong_query_time = 5 \nloose_auth_socket
+    = FORCE_PLUS_PERMANENT #控制服务器在启动时如何加载audit_log插件。\nloose_group_replication_recovery_use_ssl
+    = 1 #指定是否使用SSL连接到远程复制源。\nloose_mysqlx_socket = /var/run/mysqld/mysqlx.sock #MySQL
+    X协议监听的Unix套接字文件的路径。\nmax_connections = 512 #最大允许的同时客户端连接数。\nrelay_log_info_repository
+    = TABLE #决定slave同步的位置信息记录在哪里。\nskip_log_error = OFF #如果在配置文件中设置了log_error，则此参数会导致
+    MySQL 忽略 log_error 变量。\nskip_slave_start = ON #告诉复制服务器在启动时不要启动复制I/O（接收器）和SQL（应用器）线程。\nslow_query_log
+    = OFF \nsocket = /var/run/mysqld/mysql.sock #MySQL服务器监听的Unix套接字文件的路径。"
+  podSpec:
+    affinity:
+      nodeAffinity: null
+      podAntiAffinity: null
+    containers:
+    - image: ghcr.m.daocloud.io/ksmartdata/community-server:8.0.37
+      name: mysql
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 107374182400m
+    - image: ghcr.m.daocloud.io/ksmartdata/mgr-operator:8.3.0-2.1.4
+      name: sidecar
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+    - args:
+      - --collect.perf_schema.replication_group_member_stats
+      - --collect.perf_schema.replication_group_has_primary
+      - --collect.perf_schema.replication_group_primary_host_id
+      image: ghcr.m.daocloud.io/ksmartdata/mysqld-exporter:v0.17.2-4
+      name: metrics
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+    initContainers:
+    - image: ghcr.m.daocloud.io/ksmartdata/mgr-operator:8.3.0-2.1.4
+      name: fixdatadir
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+    - image: ghcr.m.daocloud.io/ksmartdata/mgr-operator:8.3.0-2.1.4
+      name: initconf
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+    - image: ghcr.m.daocloud.io/ksmartdata/community-server:8.0.37
+      name: initmysql
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 100m
+          memory: 100Mi
+  router:
+    instances: 1
+    podSpec:
+      containers:
+      - image: ghcr.m.daocloud.io/ksmartdata/community-router:8.2.0
+        name: router
+        resources:
+          limits:
+            cpu: "1"
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 512Mi
+  secretName: test0429-mgr-secret
+  service:
+    defaultPort: mysql-rw
+    type: NodePort
+  tlsUseSelfSigned: true
+  version: 8.0.37
